@@ -270,8 +270,8 @@ function updateMovement(dt) {
   const length = Math.hypot(forward,strafe);
   const f=length ? forward/Math.max(1,length) : 0;
   const s=length ? strafe/Math.max(1,length) : 0;
-  const directionX=Math.sin(player.yaw)*f+Math.cos(player.yaw)*s;
-  const directionZ=-Math.cos(player.yaw)*f+Math.sin(player.yaw)*s;
+  const directionX=-Math.sin(player.yaw)*f+Math.cos(player.yaw)*s;
+const directionZ=-Math.cos(player.yaw)*f-Math.sin(player.yaw)*s;
   const running=keys.has('ShiftLeft')||keys.has('ShiftRight')||(coarsePointer&&length>0.7);
   const wantsSlide=keys.has('KeyC')||keys.has('ControlLeft')||keys.has('ControlRight')||touch.slide;
   const horizontalSpeed=Math.hypot(player.velocity.x,player.velocity.z);
