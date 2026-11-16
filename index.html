@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover, user-scalable=no" />
+    <meta name="theme-color" content="#0d1627" />
+    <meta name="description" content="BLOCKDASH: PC와 태블릿에서 플레이하는 3D 아레나 표적 태그 게임" />
+    <title>BLOCKDASH — 3D 아레나</title>
+    <link rel="stylesheet" href="./src/style.css" />
+  </head>
+  <body>
+    <div id="app">
+      <canvas id="game" aria-label="3D BLOCKDASH 게임 화면"></canvas>
+      <div id="hud" class="hud" hidden>
+        <div class="brand"><span class="brand-icon">▦</span> BLOCK<span>DASH</span><small>PROTOTYPE 01</small></div>
+        <div class="status"><div class="stat"><small>점수</small><strong id="score">0</strong></div><div class="stat"><small>최고 점수</small><strong id="best">0</strong></div><div class="stat"><small>남은 시간</small><strong id="time">90</strong></div></div>
+        <div class="hint">빛나는 표적을 찾아 태그하세요 <span>·</span> 지형 뒤에서는 태그 불가</div>
+        <div id="toast" role="status" aria-live="polite"></div>
+        <div class="reticle"><i></i><i></i><i></i><i></i></div>
+        <div class="velocity">SPEED <strong id="speed">0.0</strong></div>
+      </div>
+      <div id="mobile-controls" hidden>
+        <div id="joy-zone"><div id="joy-ring"><div id="joy-knob"></div></div></div>
+        <div id="look-zone" aria-label="화면을 드래그해 시점 이동"></div>
+        <button id="tag-button" class="touch-button tag-button" aria-label="태그">TAG</button>
+        <button id="jump-button" class="touch-button jump-button" aria-label="점프">점프</button>
+        <button id="slide-button" class="touch-button slide-button" aria-label="슬라이드">슬라이드</button>
+      </div>
+      <div id="screen" class="screen">
+        <div class="hero">
+          <div class="eyebrow">PROJECT 01 / BROWSER FPS ARENA</div>
+          <h1>BLOCK<span>DASH</span></h1>
+          <p>빠른 이동, 점프와 슬라이드로 맵을 누비며<br />빛나는 홀로그램 표적을 태그하는 3D 아레나.</p>
+          <div class="pills"><span>3D 로우폴리</span><span>싱글플레이</span><span>PC · 아이패드</span></div>
+          <button id="play-button" class="play-button">게임 시작 <b>→</b></button>
+          <div id="screen-message" class="screen-message"></div>
+          <div class="controls-guide"><div><b>PC</b><span>WASD 이동 · 마우스 시점 · 클릭 태그<br />SPACE 점프 · SHIFT 달리기 · C 슬라이드 · ESC 일시정지</span></div><div><b>태블릿</b><span>왼쪽 가상 스틱 이동 · 오른쪽 드래그 시점<br />TAG / 점프 / 슬라이드 버튼</span></div></div>
+          <small class="footnote">1차 개발 버전 · 친구 대전 / 서버 연결은 다음 단계에서 추가</small>
+        </div>
+      </div>
+      <div class="orientation-note">가로 모드에서 더 편하게 플레이할 수 있어요.</div>
+    </div>
+    <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js"}}</script>
+    <script type="module" src="./src/game.js"></script>
+  </body>
+</html>
