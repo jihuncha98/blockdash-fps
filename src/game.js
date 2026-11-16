@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 
-// BLOCKDASH PROTOTYPE 01 — 싱글플레이 3D 홀로그램 태그 아레나
+// BLOCKDASH PROTOTYPE 03 — 싱글플레이 3D 홀로그램 태그 아레나
 // Multiplayer future: the game state, controls, and visuals are kept separately.
 const $ = (selector) => document.querySelector(selector);
 const canvas = $('#game');
@@ -140,6 +140,20 @@ const player = {
 };
 const keys = new Set();
 const touch = { moveX: 0, moveY: 0, joyId: null, lookId: null, lastLookX: 0, lastLookY: 0, jump: false, slide: false, tag: false };
+// Each finger has an independent identifier so moving, tagging and looking can happen at once.
+const tagLook = { id: null, lastX: 0, lastY: 0 };
+function resetTouchInput() {
+  touch.moveX = 0;
+  touch.moveY = 0;
+  touch.joyId = null;
+  touch.lookId = null;
+  touch.jump = false;
+  touch.slide = false;
+  touch.tag = false;
+  tagLook.id = null;
+  joystickKnob.style.transform = 'translate(0px,0px)';
+}
+
 let active = false;
 let ended = false;
 let paused = false;
@@ -264,14 +278,25 @@ function moveWithCollision(dx,dz) {
   else player.velocity.z=0;
 }
 
+// Reusable camera-relative ground vectors to avoid creating objects every frame.
+const movementForward = new THREE.Vector3();
+const movementRight = new THREE.Vector3();
 function updateMovement(dt) {
   const forward = (keys.has('KeyW')||keys.has('ArrowUp')?1:0)-(keys.has('KeyS')||keys.has('ArrowDown')?1:0)-touch.moveY;
   const strafe = (keys.has('KeyD')||keys.has('ArrowRight')?1:0)-(keys.has('KeyA')||keys.has('ArrowLeft')?1:0)+touch.moveX;
   const length = Math.hypot(forward,strafe);
   const f=length ? forward/Math.max(1,length) : 0;
   const s=length ? strafe/Math.max(1,length) : 0;
-  const directionX=-Math.sin(player.yaw)*f+Math.cos(player.yaw)*s;
-const directionZ=-Math.cos(player.yaw)*f-Math.sin(player.yaw)*s;
+  // Read the camera's actual world-space forward direction.
+  // Discard vertical pitch so W/S move on the ground plane.
+  syncView();
+  camera.getWorldDirection(movementForward);
+  movementForward.y = 0;
+  movementForward.normalize();
+  // The camera's horizontal right vector is perpendicular to forward.
+  movementRight.set(-movementForward.z, 0, movementForward.x);
+  const directionX = movementForward.x*f + movementRight.x*s;
+  const directionZ = movementForward.z*f + movementRight.z*s;
   const running=keys.has('ShiftLeft')||keys.has('ShiftRight')||(coarsePointer&&length>0.7);
   const wantsSlide=keys.has('KeyC')||keys.has('ControlLeft')||keys.has('ControlRight')||touch.slide;
   const horizontalSpeed=Math.hypot(player.velocity.x,player.velocity.z);
@@ -317,6 +342,7 @@ function setLook(dx,dy,sensitivity=0.0024) {
   player.pitch=clamp(player.pitch-dy*sensitivity,-Math.PI/2+0.12,Math.PI/2-0.12);
 }
 function resetGame() {
+  resetTouchInput();
   player.position.set(0,0,19);
   player.velocity.set(0,0,0);
   player.yaw=0;
@@ -354,7 +380,7 @@ function pauseGame() {
   paused=true;
   active=false;
   fireHeld=false;
-  touch.tag=false;
+  resetTouchInput();
   keys.clear();
   mobileControls.hidden=true;
   overlay.hidden=false;
@@ -366,7 +392,7 @@ function finishGame() {
   paused=false;
   ended=true;
   fireHeld=false;
-  touch.tag=false;
+  resetTouchInput();
   mobileControls.hidden=true;
   overlay.hidden=false;
   if(score>best) {
@@ -407,61 +433,148 @@ document.addEventListener('pointerlockchange',()=>{
 });
 window.addEventListener('contextmenu',(event)=>event.preventDefault());
 
-// Touch controls use Pointer Events, which work on iPadOS Safari too.
-function joystickVector(event) {
-  const rect=joystickRing.getBoundingClientRect();
-  const centerX=rect.left+rect.width/2;
-  const centerY=rect.top+rect.height/2;
-  const max=rect.width*0.30;
-  let x=(event.clientX-centerX)/max;
-  let y=(event.clientY-centerY)/max;
-  const length=Math.hypot(x,y);
-  if(length>1) {x/=length;y/=length;}
-  touch.moveX=x;touch.moveY=y;
-  joystickKnob.style.transform=`translate(${x*max}px,${y*max}px)`;
+// iPadOS: use Touch Events with unique finger identifiers. Unlike a single
+// pointer capture, independent fingers can steer, look and hold TAG together.
+// Pointer Events remain as a fallback on touch-capable non-iPad devices.
+function joystickVector(point) {
+  const rect = joystickRing.getBoundingClientRect();
+  const centerX = rect.left + rect.width / 2;
+  const centerY = rect.top + rect.height / 2;
+  const max = rect.width * 0.30;
+  let x = (point.clientX - centerX) / max;
+  let y = (point.clientY - centerY) / max;
+  const length = Math.hypot(x, y);
+  if (length > 1) { x /= length; y /= length; }
+  touch.moveX = x;
+  touch.moveY = y;
+  joystickKnob.style.transform = `translate(${x*max}px,${y*max}px)`;
 }
-joyZone.addEventListener('pointerdown',(event)=>{
-  if(!active || touch.joyId!==null) return;
-  event.preventDefault();
-  touch.joyId=event.pointerId;
-  joyZone.setPointerCapture(event.pointerId);
-  joystickVector(event);
-});
-joyZone.addEventListener('pointermove',(event)=>{
-  if(event.pointerId===touch.joyId) joystickVector(event);
-});
-function releaseJoy(event) {
-  if(event.pointerId===touch.joyId) {
-    touch.joyId=null; touch.moveX=0;touch.moveY=0;
-    joystickKnob.style.transform='translate(0px,0px)';
+function releaseJoy() {
+  touch.joyId = null;
+  touch.moveX = 0;
+  touch.moveY = 0;
+  joystickKnob.style.transform = 'translate(0px,0px)';
+}
+function beginLook(point) {
+  if (!active || touch.lookId !== null) return;
+  touch.lookId = point.identifier ?? point.pointerId;
+  touch.lastLookX = point.clientX;
+  touch.lastLookY = point.clientY;
+}
+function moveLook(point) {
+  const id = point.identifier ?? point.pointerId;
+  if (!active || id !== touch.lookId) return;
+  setLook(point.clientX - touch.lastLookX, point.clientY - touch.lastLookY, 0.0043);
+  touch.lastLookX = point.clientX;
+  touch.lastLookY = point.clientY;
+}
+function beginTag(point) {
+  if (!active || tagLook.id !== null) return;
+  tagLook.id = point.identifier ?? point.pointerId;
+  tagLook.lastX = point.clientX;
+  tagLook.lastY = point.clientY;
+  touch.tag = true;
+  tag();
+}
+function moveTag(point) {
+  // TAG is also an aim surface. Dragging the held TAG finger turns the camera.
+  const id = point.identifier ?? point.pointerId;
+  if (!active || id !== tagLook.id) return;
+  setLook(point.clientX - tagLook.lastX, point.clientY - tagLook.lastY, 0.0043);
+  tagLook.lastX = point.clientX;
+  tagLook.lastY = point.clientY;
+}
+function releaseTag(id) {
+  if (id !== tagLook.id) return;
+  tagLook.id = null;
+  touch.tag = false;
+}
+// Also accept aim gestures along the upper part of the right side of the screen.
+lookZone.style.height = '100%';
+const useNativeTouch = coarsePointer && ('ontouchstart' in window);
+if (useNativeTouch) {
+  // Touch events keep a finger bound to its initial element even when it moves
+  // away from that element. This makes press-and-drag TAG work on Safari.
+  function onTouches(element, eventName, handle) {
+    element.addEventListener(eventName, event => {
+      if (!active) return;
+      event.preventDefault();
+      for (let i = 0; i < event.changedTouches.length; i++) handle(event.changedTouches[i]);
+    }, { passive: false });
   }
-}
-joyZone.addEventListener('pointerup',releaseJoy);
-joyZone.addEventListener('pointercancel',releaseJoy);
-lookZone.addEventListener('pointerdown',(event)=>{
-  if(!active||touch.lookId!==null) return;
-  event.preventDefault();
-  touch.lookId=event.pointerId;
-  touch.lastLookX=event.clientX;touch.lastLookY=event.clientY;
-  lookZone.setPointerCapture(event.pointerId);
-});
-lookZone.addEventListener('pointermove',(event)=>{
-  if(!active || event.pointerId!==touch.lookId) return;
-  setLook(event.clientX-touch.lastLookX,event.clientY-touch.lastLookY,0.0043);
-  touch.lastLookX=event.clientX;touch.lastLookY=event.clientY;
-});
-function releaseLook(event){if(event.pointerId===touch.lookId) touch.lookId=null;}
-lookZone.addEventListener('pointerup',releaseLook);
-lookZone.addEventListener('pointercancel',releaseLook);
-for(const [button, name] of [[tagButton,'tag'],[jumpButton,'jump'],[slideButton,'slide']]) {
-  button.addEventListener('pointerdown',(event)=>{
-    event.preventDefault(); event.stopPropagation();
-    button.setPointerCapture(event.pointerId);
-    touch[name]=true;
-    if(name==='tag') tag();
+  onTouches(joyZone, 'touchstart', point => {
+    if (touch.joyId !== null) return;
+    touch.joyId = point.identifier;
+    joystickVector(point);
   });
-  button.addEventListener('pointerup',()=>{if(name==='tag') touch.tag=false;});
-  button.addEventListener('pointercancel',()=>{if(name==='tag') touch.tag=false;});
+  onTouches(joyZone, 'touchmove', point => {
+    if (point.identifier === touch.joyId) joystickVector(point);
+  });
+  for (const type of ['touchend', 'touchcancel']) {
+    onTouches(joyZone, type, point => {
+      if (point.identifier === touch.joyId) releaseJoy();
+    });
+  }
+  onTouches(lookZone, 'touchstart', beginLook);
+  onTouches(lookZone, 'touchmove', moveLook);
+  for (const type of ['touchend', 'touchcancel']) {
+    onTouches(lookZone, type, point => {
+      if (point.identifier === touch.lookId) touch.lookId = null;
+    });
+  }
+  onTouches(tagButton, 'touchstart', beginTag);
+  onTouches(tagButton, 'touchmove', moveTag);
+  for (const type of ['touchend', 'touchcancel']) {
+    onTouches(tagButton, type, point => releaseTag(point.identifier));
+  }
+  onTouches(jumpButton, 'touchstart', () => { touch.jump = true; });
+  onTouches(slideButton, 'touchstart', () => { touch.slide = true; });
+} else {
+  // Pointer fallback for touchscreen browsers without Touch Events.
+  joyZone.addEventListener('pointerdown', event => {
+    if (!active || touch.joyId !== null) return;
+    event.preventDefault();
+    touch.joyId = event.pointerId;
+    joyZone.setPointerCapture(event.pointerId);
+    joystickVector(event);
+  });
+  joyZone.addEventListener('pointermove', event => {
+    if (event.pointerId === touch.joyId) joystickVector(event);
+  });
+  for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) {
+    joyZone.addEventListener(type, event => {
+      if (event.pointerId === touch.joyId) releaseJoy();
+    });
+  }
+  lookZone.addEventListener('pointerdown', event => {
+    if (!active || touch.lookId !== null) return;
+    event.preventDefault();
+    beginLook(event);
+    lookZone.setPointerCapture(event.pointerId);
+  });
+  lookZone.addEventListener('pointermove', moveLook);
+  for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) {
+    lookZone.addEventListener(type, event => {
+      if (event.pointerId === touch.lookId) touch.lookId = null;
+    });
+  }
+  tagButton.addEventListener('pointerdown', event => {
+    if (!active || tagLook.id !== null) return;
+    event.preventDefault();
+    beginTag(event);
+    tagButton.setPointerCapture(event.pointerId);
+  });
+  tagButton.addEventListener('pointermove', moveTag);
+  for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) {
+    tagButton.addEventListener(type, event => releaseTag(event.pointerId));
+  }
+  for (const [button, name] of [[jumpButton, 'jump'], [slideButton, 'slide']]) {
+    button.addEventListener('pointerdown', event => {
+      if (!active) return;
+      event.preventDefault();
+      touch[name] = true;
+    });
+  }
 }
 
 function animate(now) {
